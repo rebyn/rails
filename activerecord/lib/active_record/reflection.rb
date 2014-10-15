@@ -840,6 +840,10 @@ module ActiveRecord
           raise HasOneThroughCantAssociateThroughCollection.new(active_record.name, self, through_reflection)
         end
 
+        if has_one? && through_reflection.polymorphic?
+          raise HasOneAssociationPolymorphicThroughError.new(active_record.name, self, through_reflection)
+        end
+
         check_validity_of_inverse!
       end
 
