@@ -289,6 +289,12 @@ class HasOneThroughAssociationsTest < ActiveRecord::TestCase
     end
   end
 
+  def test_has_one_through_polymorphic
+    assert_raise(ActiveRecord::HasManyThroughAssociationPolymorphicThroughError) do
+      members(:groucho).things
+    end
+  end
+
   def test_has_one_through_belongs_to_should_update_when_the_through_foreign_key_changes
     minivan = minivans(:cool_first)
 
