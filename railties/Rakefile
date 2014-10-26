@@ -11,18 +11,17 @@ namespace :test do
     # Splitting test folders between these builds:
     #   GEM=railties:test/application
     #   GEM=railties:test/others
-    dirs = case ENV["GEM"]
+    case ENV["GEM"]
     when "railties:test/application"
-      dirs = ["application"]
+      test_files = dirs.map { |dir| "test/application/**/*_test.rb" }
     when "railties:test/others"
       dirs = Dir.glob("*").select { |f| File.directory?(f) } - ["application"]
+      test_files = dirs.map { |dir| "test/#{dir}/**/*_test.rb" }
+      test_files << "test/*_test.rb"
     else
-      (ENV["TEST_DIR"] || ENV["TEST_DIRS"] || "**").split(",")
+      dirs = (ENV["TEST_DIR"] || ENV["TEST_DIRS"] || "**").split(",")
+      test_files = dirs.map { |dir| "test/#{dir}/*_test.rb" }
     end
-
-    test_files = dirs.map { |dir| "test/#{dir}/*_test.rb" }
-    # Add files in `/test` folder when splitting subfolders
-    test_files << "test/*_test.rb" if ENV["GEM"] == "railties:test/others"
 
     Dir[*test_files].each do |file|
       next true if file.include?("fixtures")
