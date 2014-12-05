@@ -1,8 +1,6 @@
 # encoding: utf-8
-
 require "cases/helper"
-require 'active_record/base'
-require 'active_record/connection_adapters/postgresql_adapter'
+require 'support/schema_dumping_helper'
 
 module PostgresqlUUIDHelper
   def connection
@@ -16,6 +14,7 @@ end
 
 class PostgresqlUUIDTest < ActiveRecord::TestCase
   include PostgresqlUUIDHelper
+  include SchemaDumpingHelper
 
   class UUIDType < ActiveRecord::Base
     self.table_name = "uuid_data_type"
@@ -108,10 +107,36 @@ class PostgresqlUUIDTest < ActiveRecord::TestCase
       assert_equal "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11", uuid.guid
     end
   end
+
+  def test_schema_dump_with_shorthand
+    output = dump_table_schema "uuid_data_type"
+    assert_match %r{t.uuid "guid"}, output
+  end
+end
+
+class PostgresqlLargeKeysTest < ActiveRecord::TestCase
+  include PostgresqlUUIDHelper
+  include SchemaDumpingHelper
+
+  def setup
+    connection.create_table('big_serials', id: :bigserial) do |t|
+      t.string 'name'
+    end
+  end
+
+  def test_omg
+    schema = dump_table_schema "big_serials"
+    assert_match "create_table \"big_serials\", id: :bigserial, force: true", schema
+  end
+
+  def teardown
+    drop_table "big_serials"
+  end
 end
 
 class PostgresqlUUIDGenerationTest < ActiveRecord::TestCase
   include PostgresqlUUIDHelper
+  include SchemaDumpingHelper
 
   class UUID < ActiveRecord::Base
     self.table_name = 'pg_uuids'
@@ -171,17 +196,15 @@ class PostgresqlUUIDGenerationTest < ActiveRecord::TestCase
     end
 
     def test_schema_dumper_for_uuid_primary_key
-      schema = StringIO.new
-      ActiveRecord::SchemaDumper.dump(connection, schema)
-      assert_match(/\bcreate_table "pg_uuids", id: :uuid, default: "uuid_generate_v1\(\)"/, schema.string)
-      assert_match(/t\.uuid   "other_uuid", default: "uuid_generate_v4\(\)"/, schema.string)
+      schema = dump_table_schema "pg_uuids"
+      assert_match(/\bcreate_table "pg_uuids", id: :uuid, default: "uuid_generate_v1\(\)"/, schema)
+      assert_match(/t\.uuid   "other_uuid", default: "uuid_generate_v4\(\)"/, schema)
     end
 
     def test_schema_dumper_for_uuid_primary_key_with_custom_default
-      schema = StringIO.new
-      ActiveRecord::SchemaDumper.dump(connection, schema)
-      assert_match(/\bcreate_table "pg_uuids_2", id: :uuid, default: "my_uuid_generator\(\)"/, schema.string)
-      assert_match(/t\.uuid   "other_uuid_2", default: "my_uuid_generator\(\)"/, schema.string)
+      schema = dump_table_schema "pg_uuids_2"
+      assert_match(/\bcreate_table "pg_uuids_2", id: :uuid, default: "my_uuid_generator\(\)"/, schema)
+      assert_match(/t\.uuid   "other_uuid_2", default: "my_uuid_generator\(\)"/, schema)
     end
   end
 end

@@ -1,4 +1,5 @@
 require 'active_support/deprecation'
+require 'active_support/core_ext/string/filters'
 
 module ActiveRecord
   module FinderMethods
@@ -81,12 +82,16 @@ module ActiveRecord
     #   Post.find_by "published_at < ?", 2.weeks.ago
     def find_by(*args)
       where(*args).take
+    rescue RangeError
+      nil
     end
 
     # Like <tt>find_by</tt>, except that if no record is found, raises
     # an <tt>ActiveRecord::RecordNotFound</tt> error.
     def find_by!(*args)
       where(*args).take!
+    rescue RangeError
+      raise RecordNotFound, "Couldn't find #{@klass.name} with an out of range value"
     end
 
     # Gives a record (or N records if a parameter is supplied) without any implied
@@ -103,7 +108,7 @@ module ActiveRecord
     # Same as +take+ but raises <tt>ActiveRecord::RecordNotFound</tt> if no record
     # is found. Note that <tt>take!</tt> accepts no arguments.
     def take!
-      take or raise RecordNotFound.new("Couldn't find #{@klass.name} with [#{arel.where_sql}]")
+      take or raise RecordNotFound.new("Couldn't find #{@klass.name} with [#{arel.where_sql(@klass.arel_engine)}]")
     end
 
     # Find the first record (or first N records if a parameter is supplied).
@@ -171,7 +176,7 @@ module ActiveRecord
     # Same as +last+ but raises <tt>ActiveRecord::RecordNotFound</tt> if no record
     # is found. Note that <tt>last!</tt> accepts no arguments.
     def last!
-      last or raise RecordNotFound.new("Couldn't find #{@klass.name} with [#{arel.where_sql}]")
+      last or raise RecordNotFound.new("Couldn't find #{@klass.name} with [#{arel.where_sql(@klass.arel_engine)}]")
     end
 
     # Find the second record.
@@ -284,8 +289,10 @@ module ActiveRecord
     def exists?(conditions = :none)
       if Base === conditions
         conditions = conditions.id
-        ActiveSupport::Deprecation.warn "You are passing an instance of ActiveRecord::Base to `exists?`." \
-          "Please pass the id of the object by calling `.id`"
+        ActiveSupport::Deprecation.warn(<<-MSG.squish)
+          You are passing an instance of ActiveRecord::Base to `exists?`.
+          Please pass the id of the object by calling `.id`
+        MSG
       end
 
       return false if !conditions
@@ -316,7 +323,7 @@ module ActiveRecord
     # the expected number of results should be provided in the +expected_size+
     # argument.
     def raise_record_not_found_exception!(ids, result_size, expected_size) #:nodoc:
-      conditions = arel.where_sql
+      conditions = arel.where_sql(@klass.arel_engine)
       conditions = " [#{conditions}]" if conditions
 
       if Array(ids).size == 1
@@ -408,7 +415,7 @@ module ActiveRecord
     end
 
     def using_limitable_reflections?(reflections)
-      reflections.none? { |r| r.collection? }
+      reflections.none?(&:collection?)
     end
 
     protected
@@ -430,19 +437,20 @@ module ActiveRecord
       else
         find_some(ids)
       end
+    rescue RangeError
+      raise RecordNotFound, "Couldn't find #{@klass.name} with an out of range ID"
     end
 
     def find_one(id)
       if ActiveRecord::Base === id
         id = id.id
-        ActiveSupport::Deprecation.warn "You are passing an instance of ActiveRecord::Base to `find`." \
-          "Please pass the id of the object by calling `.id`"
+        ActiveSupport::Deprecation.warn(<<-MSG.squish)
+          You are passing an instance of ActiveRecord::Base to `find`.
+          Please pass the id of the object by calling `.id`
+        MSG
       end
 
-      column = columns_hash[primary_key]
-      substitute = connection.substitute_at(column, bind_values.length)
-      relation = where(table[primary_key].eq(substitute))
-      relation.bind_values += [[column, id]]
+      relation = where(primary_key => id)
       record = relation.take
 
       raise_record_not_found_exception!(id, 0, 1) unless record
@@ -451,7 +459,7 @@ module ActiveRecord
     end
 
     def find_some(ids)
-      result = where(table[primary_key].in(ids)).to_a
+      result = where(primary_key => ids).to_a
 
       expected_size =
         if limit_value && ids.size > limit_value
@@ -490,7 +498,7 @@ module ActiveRecord
     end
 
     def find_nth!(index)
-      find_nth(index, offset_index) or raise RecordNotFound.new("Couldn't find #{@klass.name} with [#{arel.where_sql}]")
+      find_nth(index, offset_index) or raise RecordNotFound.new("Couldn't find #{@klass.name} with [#{arel.where_sql(@klass.arel_engine)}]")
     end
 
     def find_nth_with_limit(offset, limit)

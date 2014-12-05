@@ -21,6 +21,7 @@ PROCESS_COUNT = (ENV['N'] || 4).to_i
 
 require 'active_support/testing/autorun'
 require 'abstract_controller'
+require 'abstract_controller/railties/routes_helpers'
 require 'action_controller'
 require 'action_view'
 require 'action_view/testing/resolvers'
@@ -53,7 +54,7 @@ I18n.enforce_available_locales = false
 # Register danish language for testing
 I18n.backend.store_translations 'da', {}
 I18n.backend.store_translations 'pt-BR', {}
-ORIGINAL_LOCALES = I18n.available_locales.map {|locale| locale.to_s }.sort
+ORIGINAL_LOCALES = I18n.available_locales.map(&:to_s).sort
 
 FIXTURE_LOAD_PATH = File.join(File.dirname(__FILE__), 'fixtures')
 FIXTURES = Pathname.new(FIXTURE_LOAD_PATH)
@@ -194,6 +195,7 @@ class ActionDispatch::IntegrationTest < ActiveSupport::TestCase
     yield temporary_routes
   ensure
     self.class.app = old_app
+    self.remove!
     silence_warnings { Object.const_set(:SharedTestRoutes, old_routes) }
   end
 
@@ -259,7 +261,7 @@ end
 module ActionController
   class Base
     # This stub emulates the Railtie including the URL helpers from a Rails application
-    include SharedTestRoutes.url_helpers
+    extend AbstractController::Railties::RoutesHelpers.with(SharedTestRoutes)
     include SharedTestRoutes.mounted_helpers
 
     self.view_paths = FIXTURE_LOAD_PATH

@@ -162,16 +162,6 @@ class SchemaDumperTest < ActiveRecord::TestCase
     assert_no_match %r{create_table "schema_migrations"}, output
   end
 
-  def test_schema_dump_illegal_ignored_table_value
-    stream = StringIO.new
-    old_ignore_tables, ActiveRecord::SchemaDumper.ignore_tables = ActiveRecord::SchemaDumper.ignore_tables, [5]
-    assert_raise(StandardError) do
-      ActiveRecord::SchemaDumper.dump(ActiveRecord::Base.connection, stream)
-    end
-  ensure
-    ActiveRecord::SchemaDumper.ignore_tables = old_ignore_tables
-  end
-
   def test_schema_dumps_index_columns_in_right_order
     index_definition = standard_dump.split(/\n/).grep(/add_index.*companies/).first.strip
     if current_adapter?(:MysqlAdapter, :Mysql2Adapter, :PostgreSQLAdapter)
@@ -261,84 +251,6 @@ class SchemaDumperTest < ActiveRecord::TestCase
         output = perform_schema_dump
         assert_no_match "# These are extensions that must be enabled", output
         assert_no_match %r{enable_extension}, output
-      end
-    end
-
-    def test_schema_dump_includes_xml_shorthand_definition
-      output = standard_dump
-      if %r{create_table "postgresql_xml_data_type"} =~ output
-        assert_match %r{t.xml "data"}, output
-      end
-    end
-
-    def test_schema_dump_includes_json_shorthand_definition
-      output = standard_dump
-      if %r{create_table "postgresql_json_data_type"} =~ output
-        assert_match %r|t.json "json_data", default: {}|, output
-      end
-    end
-
-    def test_schema_dump_includes_inet_shorthand_definition
-      output = standard_dump
-      if %r{create_table "postgresql_network_addresses"} =~ output
-        assert_match %r{t.inet\s+"inet_address",\s+default: "192.168.1.1"}, output
-      end
-    end
-
-    def test_schema_dump_includes_cidr_shorthand_definition
-      output = standard_dump
-      if %r{create_table "postgresql_network_addresses"} =~ output
-        assert_match %r{t.cidr\s+"cidr_address",\s+default: "192.168.1.0/24"}, output
-      end
-    end
-
-    def test_schema_dump_includes_macaddr_shorthand_definition
-      output = standard_dump
-      if %r{create_table "postgresql_network_addresses"} =~ output
-        assert_match %r{t.macaddr\s+"mac_address",\s+default: "ff:ff:ff:ff:ff:ff"}, output
-      end
-    end
-
-    def test_schema_dump_includes_uuid_shorthand_definition
-      output = standard_dump
-      if %r{create_table "postgresql_uuids"} =~ output
-        assert_match %r{t.uuid "guid"}, output
-      end
-    end
-
-    def test_schema_dump_includes_hstores_shorthand_definition
-      output = standard_dump
-      if %r{create_table "postgresql_hstores"} =~ output
-        assert_match %r[t.hstore "hash_store", default: {}], output
-      end
-    end
-
-    def test_schema_dump_includes_citext_shorthand_definition
-      output = standard_dump
-      if %r{create_table "postgresql_citext"} =~ output
-        assert_match %r[t.citext "text_citext"], output
-      end
-    end
-
-    def test_schema_dump_includes_ltrees_shorthand_definition
-      output = standard_dump
-      if %r{create_table "postgresql_ltrees"} =~ output
-        assert_match %r[t.ltree "path"], output
-      end
-    end
-
-    def test_schema_dump_includes_arrays_shorthand_definition
-      output = standard_dump
-      if %r{create_table "postgresql_arrays"} =~ output
-        assert_match %r[t.text\s+"nicknames",\s+array: true], output
-        assert_match %r[t.integer\s+"commission_by_quarter",\s+array: true], output
-      end
-    end
-
-    def test_schema_dump_includes_tsvector_shorthand_definition
-      output = standard_dump
-      if %r{create_table "postgresql_tsvectors"} =~ output
-        assert_match %r{t.tsvector "text_vector"}, output
       end
     end
   end

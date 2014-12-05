@@ -1,7 +1,9 @@
 # encoding: utf-8
 require "cases/helper"
+require 'support/schema_dumping_helper'
 
 class PostgresqlArrayTest < ActiveRecord::TestCase
+  include SchemaDumpingHelper
   include InTimeZone
   OID = ActiveRecord::ConnectionAdapters::PostgreSQL::OID
 
@@ -106,6 +108,12 @@ class PostgresqlArrayTest < ActiveRecord::TestCase
     x.reload
 
     assert_equal([1, 2], x.ratings)
+  end
+
+  def test_schema_dump_with_shorthand
+    output = dump_table_schema "pg_arrays"
+    assert_match %r[t.string\s+"tags",\s+array: true], output
+    assert_match %r[t.integer\s+"ratings",\s+array: true], output
   end
 
   def test_select_with_strings
@@ -252,6 +260,30 @@ class PostgresqlArrayTest < ActiveRecord::TestCase
       assert_equal [time], record.datetimes
       assert_equal ActiveSupport::TimeZone[tz], record.datetimes.first.time_zone
     end
+  end
+
+  def test_assigning_non_array_value
+    record = PgArray.new(tags: "not-an-array")
+    assert_equal "not-an-array", record.tags
+    e = assert_raises(ActiveRecord::StatementInvalid) do
+      record.save!
+    end
+    assert_instance_of PG::InvalidTextRepresentation, e.original_exception
+  end
+
+  def test_uniqueness_validation
+    klass = Class.new(PgArray) do
+      validates_uniqueness_of :tags
+
+      def self.model_name; ActiveModel::Name.new(PgArray) end
+    end
+    e1 = klass.create("tags" => ["black", "blue"])
+    assert e1.persisted?, "Saving e1"
+
+    e2 = klass.create("tags" => ["black", "blue"])
+    assert !e2.persisted?, "e2 shouldn't be valid"
+    assert e2.errors[:tags].any?, "Should have errors for tags"
+    assert_equal ["has already been taken"], e2.errors[:tags], "Should have uniqueness message for tags"
   end
 
   private

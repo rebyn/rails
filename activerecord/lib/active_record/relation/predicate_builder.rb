@@ -5,7 +5,12 @@ module ActiveRecord
     autoload :RelationHandler, 'active_record/relation/predicate_builder/relation_handler'
     autoload :ArrayHandler, 'active_record/relation/predicate_builder/array_handler'
 
-    def self.resolve_column_aliases(klass, hash)
+    def initialize(klass, table)
+      @klass = klass
+      @table = table
+    end
+
+    def resolve_column_aliases(hash)
       hash = hash.dup
       hash.keys.grep(Symbol) do |key|
         if klass.attribute_alias? key
@@ -15,39 +20,12 @@ module ActiveRecord
       hash
     end
 
-    def self.build_from_hash(klass, attributes, default_table)
-      queries = []
-
-      attributes.each do |column, value|
-        table = default_table
-
-        if value.is_a?(Hash)
-          if value.empty?
-            queries << '1=0'
-          else
-            table       = Arel::Table.new(column, default_table.engine)
-            association = klass._reflect_on_association(column)
-
-            value.each do |k, v|
-              queries.concat expand(association && association.klass, table, k, v)
-            end
-          end
-        else
-          column = column.to_s
-
-          if column.include?('.')
-            table_name, column = column.split('.', 2)
-            table = Arel::Table.new(table_name, default_table.engine)
-          end
-
-          queries.concat expand(klass, table, column, value)
-        end
-      end
-
-      queries
+    def build_from_hash(attributes)
+      attributes = convert_dot_notation_to_hash(attributes.stringify_keys)
+      expand_from_hash(attributes)
     end
 
-    def self.expand(klass, table, column, value)
+    def expand(column, value)
       queries = []
 
       # Find the foreign key when using queries such as:
@@ -57,17 +35,17 @@ module ActiveRecord
       # PriceEstimate.where(estimate_of: treasure)
       if klass && reflection = klass._reflect_on_association(column)
         if reflection.polymorphic? && base_class = polymorphic_base_class_from_value(value)
-          queries << build(table[reflection.foreign_type], base_class)
+          queries << self.class.build(table[reflection.foreign_type], base_class.name)
         end
 
         column = reflection.foreign_key
       end
 
-      queries << build(table[column], value)
+      queries << self.class.build(table[column], value)
       queries
     end
 
-    def self.polymorphic_base_class_from_value(value)
+    def polymorphic_base_class_from_value(value)
       case value
       when Relation
         value.klass.base_class
@@ -106,21 +84,62 @@ module ActiveRecord
     end
 
     register_handler(BasicObject, ->(attribute, value) { attribute.eq(value) })
-    # FIXME: I think we need to deprecate this behavior
-    register_handler(Class, ->(attribute, value) { attribute.eq(value.name) })
+    register_handler(Class, ->(attribute, value) { deprecate_class_handler; attribute.eq(value.name) })
     register_handler(Base, ->(attribute, value) { attribute.eq(value.id) })
-    register_handler(Range, ->(attribute, value) { attribute.in(value) })
+    register_handler(Range, ->(attribute, value) { attribute.between(value) })
     register_handler(Relation, RelationHandler.new)
     register_handler(Array, ArrayHandler.new)
 
     def self.build(attribute, value)
       handler_for(value).call(attribute, value)
     end
-    private_class_method :build
 
     def self.handler_for(object)
       @handlers.detect { |klass, _| klass === object }.last
     end
     private_class_method :handler_for
+
+    def self.deprecate_class_handler
+      ActiveSupport::Deprecation.warn(<<-MSG.squish)
+        Passing a class as a value in an Active Record query is deprecated and
+        will be removed. Pass a string instead.
+      MSG
+    end
+
+    protected
+
+    attr_reader :klass, :table
+
+    def expand_from_hash(attributes)
+      return ["1=0"] if attributes.empty?
+
+      attributes.flat_map do |key, value|
+        if value.is_a?(Hash)
+          arel_table = Arel::Table.new(key)
+          association = klass._reflect_on_association(key)
+          builder = self.class.new(association && association.klass, arel_table)
+
+          builder.expand_from_hash(value)
+        else
+          expand(key, value)
+        end
+      end
+    end
+
+    private
+
+    def convert_dot_notation_to_hash(attributes)
+      dot_notation = attributes.keys.select { |s| s.include?(".") }
+
+      dot_notation.each do |key|
+        table_name, column_name = key.split(".")
+        value = attributes.delete(key)
+        attributes[table_name] ||= {}
+
+        attributes[table_name] = attributes[table_name].merge(column_name => value)
+      end
+
+      attributes
+    end
   end
 end

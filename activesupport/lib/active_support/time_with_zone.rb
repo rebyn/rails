@@ -75,8 +75,8 @@ module ActiveSupport
 
     # Returns a <tt>Time.local()</tt> instance of the simultaneous time in your
     # system's <tt>ENV['TZ']</tt> zone.
-    def localtime
-      utc.respond_to?(:getlocal) ? utc.getlocal : utc.to_time.getlocal
+    def localtime(utc_offset = nil)
+      utc.respond_to?(:getlocal) ? utc.getlocal(utc_offset) : utc.to_time.getlocal(utc_offset)
     end
     alias_method :getlocal, :localtime
 
@@ -121,16 +121,25 @@ module ActiveSupport
       utc? && alternate_utc_string || TimeZone.seconds_to_utc_offset(utc_offset, colon)
     end
 
-    # Time uses +zone+ to display the time zone abbreviation, so we're
-    # duck-typing it.
+    # Returns the time zone abbreviation.
+    #
+    #   Time.zone = 'Eastern Time (US & Canada)'   # => "Eastern Time (US & Canada)"
+    #   Time.zone.now.zone # => "EST"
     def zone
       period.zone_identifier.to_s
     end
 
+    # Returns a string of the object's date, time, zone and offset from UTC.
+    #
+    #   Time.zone.now.httpdate  # => "Thu, 04 Dec 2014 11:00:25 EST -05:00"
     def inspect
       "#{time.strftime('%a, %d %b %Y %H:%M:%S')} #{zone} #{formatted_offset}"
     end
 
+    # Returns a string of the object's date and time in the ISO 8601 standard
+    # format.
+    #
+    #   Time.zone.now.xmlschema  # => "2014-12-04T11:02:37-05:00"
     def xmlschema(fraction_digits = 0)
       fraction = if fraction_digits.to_i > 0
         (".%06i" % time.usec)[0, fraction_digits.to_i + 1]
@@ -201,15 +210,11 @@ module ActiveSupport
     end
     alias_method :to_formatted_s, :to_s
 
-    # Replaces <tt>%Z</tt> and <tt>%z</tt> directives with +zone+ and
-    # +formatted_offset+, respectively, before passing to Time#strftime, so
-    # that zone information is correct
+    # Replaces <tt>%Z</tt> directive with +zone before passing to Time#strftime,
+    # so that zone information is correct.
     def strftime(format)
-      format = format.gsub('%Z', zone)
-                     .gsub('%z',   formatted_offset(false))
-                     .gsub('%:z',  formatted_offset(true))
-                     .gsub('%::z', formatted_offset(true) + ":00")
-      time.strftime(format)
+      format = format.gsub(/((?:\A|[^%])(?:%%)*)%Z/, "\\1#{zone}")
+      getlocal(utc_offset).strftime(format)
     end
 
     # Use the time in UTC for comparisons.
@@ -307,15 +312,27 @@ module ActiveSupport
       [time.sec, time.min, time.hour, time.day, time.mon, time.year, time.wday, time.yday, dst?, zone]
     end
 
+    # Returns the object's date and time as a floating point number of seconds
+    # since the Epoch (January 1, 1970 00:00 UTC).
+    #
+    #   Time.zone.now.to_f # => 1417709320.285418
     def to_f
       utc.to_f
     end
 
+    # Returns the object's date and time as an integer number of seconds
+    # since the Epoch (January 1, 1970 00:00 UTC).
+    #
+    #   Time.zone.now.to_i # => 1417709320
     def to_i
       utc.to_i
     end
     alias_method :tv_sec, :to_i
 
+    # Returns the object's date and time as a rational number of seconds
+    # since the Epoch (January 1, 1970 00:00 UTC).
+    #
+    #   Time.zone.now.to_r # => (708854548642709/500000)
     def to_r
       utc.to_r
     end

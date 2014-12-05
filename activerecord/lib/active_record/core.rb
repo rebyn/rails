@@ -1,6 +1,7 @@
+require 'thread'
 require 'active_support/core_ext/hash/indifferent_access'
 require 'active_support/core_ext/object/duplicable'
-require 'thread'
+require 'active_support/core_ext/string/filters'
 
 module ActiveRecord
   module Core
@@ -84,12 +85,13 @@ module ActiveRecord
       mattr_accessor :dump_schema_after_migration, instance_writer: false
       self.dump_schema_after_migration = true
 
-      # :nodoc:
       mattr_accessor :maintain_test_schema, instance_accessor: false
 
       def self.disable_implicit_join_references=(value)
-        ActiveSupport::Deprecation.warn("Implicit join references were removed with Rails 4.1." \
-                                        "Make sure to remove this configuration because it does nothing.")
+        ActiveSupport::Deprecation.warn(<<-MSG.squish)
+          Implicit join references were removed with Rails 4.1.
+          Make sure to remove this configuration because it does nothing.
+        MSG
       end
 
       class_attribute :default_connection_handler, instance_writer: false
@@ -135,8 +137,10 @@ module ActiveRecord
         id  = ids.first
         if ActiveRecord::Base === id
           id = id.id
-          ActiveSupport::Deprecation.warn "You are passing an instance of ActiveRecord::Base to `find`." \
-            "Please pass the id of the object by calling `.id`"
+          ActiveSupport::Deprecation.warn(<<-MSG.squish)
+            You are passing an instance of ActiveRecord::Base to `find`.
+            Please pass the id of the object by calling `.id`
+          MSG
         end
         key = primary_key
 
@@ -150,6 +154,8 @@ module ActiveRecord
           raise RecordNotFound, "Couldn't find #{name} with '#{primary_key}'=#{id}"
         end
         record
+      rescue RangeError
+        raise RecordNotFound, "Couldn't find #{name} with an out of range value for '#{primary_key}'"
       end
 
       def find_by(*args)
@@ -180,6 +186,8 @@ module ActiveRecord
           s.execute(hash.values, self, connection).first
         rescue TypeError => e
           raise ActiveRecord::StatementInvalid.new(e.message, e)
+        rescue RangeError
+          nil
         end
       end
 
@@ -226,7 +234,7 @@ module ActiveRecord
       #     scope :published_and_commented, -> { published.and(self.arel_table[:comments_count].gt(0)) }
       #   end
       def arel_table # :nodoc:
-        @arel_table ||= Arel::Table.new(table_name, arel_engine)
+        @arel_table ||= Arel::Table.new(table_name)
       end
 
       # Returns the Arel engine.
@@ -261,7 +269,7 @@ module ActiveRecord
     #   # Instantiates a single new object
     #   User.new(first_name: 'Jamie')
     def initialize(attributes = nil, options = {})
-      @attributes = self.class.default_attributes.dup
+      @attributes = self.class._default_attributes.dup
 
       init_internals
       initialize_internals_callback
@@ -272,7 +280,7 @@ module ActiveRecord
       init_attributes(attributes, options) if attributes
 
       yield self if block_given?
-      run_initialize_callbacks
+      _run_initialize_callbacks
     end
 
     # Initialize an empty model object from +coder+. +coder+ must contain
@@ -294,8 +302,8 @@ module ActiveRecord
 
       self.class.define_attribute_methods
 
-      run_find_callbacks
-      run_initialize_callbacks
+      _run_find_callbacks
+      _run_initialize_callbacks
 
       self
     end
@@ -331,7 +339,7 @@ module ActiveRecord
       @attributes = @attributes.dup
       @attributes.reset(self.class.primary_key)
 
-      run_initialize_callbacks
+      _run_initialize_callbacks
 
       @aggregation_cache = {}
       @association_cache = {}
@@ -527,8 +535,6 @@ module ActiveRecord
     end
 
     def init_internals
-      @attributes.ensure_initialized(self.class.primary_key)
-
       @aggregation_cache        = {}
       @association_cache        = {}
       @readonly                 = false

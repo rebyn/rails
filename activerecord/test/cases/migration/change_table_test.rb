@@ -95,8 +95,8 @@ module ActiveRecord
 
       def test_remove_timestamps_creates_updated_at_and_created_at
         with_change_table do |t|
-          @connection.expect :remove_timestamps, nil, [:delete_me]
-          t.remove_timestamps
+          @connection.expect :remove_timestamps, nil, [:delete_me, { null: true }]
+          t.remove_timestamps({ null: true })
         end
       end
 
@@ -211,6 +211,12 @@ module ActiveRecord
         with_change_table do |t|
           @connection.expect :rename_column, nil, [:delete_me, :bar, :baz]
           t.rename :bar, :baz
+        end
+      end
+
+      def test_table_name_set
+        with_change_table do |t|
+          assert_equal :delete_me, t.name
         end
       end
     end
